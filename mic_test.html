@@ -40,7 +40,9 @@
       <option value="tiny">tiny</option>
       <option value="small">small</option>
       <option value="medium">medium</option>
+      <option value="large-v2">large-v2</option>
       <option value="large-v3">large-v3</option>
+      <option value="large-v3-turbo">large-v3-turbo</option>
     </select>
     <select id="language">
       <option value="">Auto-detect</option>
@@ -59,6 +61,7 @@
     </select>
     <button id="startBtn" onclick="startRecording()">Start Recording</button>
     <button id="stopBtn" class="stop" onclick="stopRecording()" disabled>Stop</button>
+    <button onclick="document.getElementById('transcript').innerHTML=''" style="background:#333;border-color:#333;">Clear</button>
   </div>
   <div id="status">Ready - click Start Recording</div>
   <div id="transcript"></div>
@@ -69,6 +72,7 @@ let ws = null;
 let audioContext = null;
 let mediaStream = null;
 let processor = null;
+let stopping = false;
 const TARGET_SAMPLE_RATE = 16000;
 
 function setStatus(text, cls) {
@@ -78,6 +82,7 @@ function setStatus(text, cls) {
 }
 
 async function startRecording() {
+  stopping = false;
   document.getElementById('startBtn').disabled = true;
   document.getElementById('stopBtn').disabled = false;
 
@@ -93,13 +98,15 @@ async function startRecording() {
     processor = audioContext.createScriptProcessor(bufferSize, 1, 1);
 
     setStatus('Connecting to server...', '');
-    ws = new WebSocket('ws://localhost:8000/ws/transcribe');
+    const currentWs = new WebSocket('ws://localhost:8000/ws/transcribe');
+    ws = currentWs;
 
-    ws.onopen = () => {
+    currentWs.onopen = () => {
+      if (ws !== currentWs) return;
       const model = document.getElementById('model').value;
       const modelSize = document.getElementById('modelSize').value;
       const language = document.getElementById('language').value || null;
-      ws.send(JSON.stringify({
+      currentWs.send(JSON.stringify({
         model: model,
         model_size: modelSize,
         sample_rate: audioContext.sampleRate,
@@ -108,7 +115,8 @@ async function startRecording() {
       setStatus('Waiting for model to load (first time may take a moment)...', 'connected');
     };
 
-    ws.onmessage = (event) => {
+    currentWs.onmessage = (event) => {
+      if (ws !== currentWs) return;
       const data = JSON.parse(event.data);
       const transcript = document.getElementById('transcript');
 
@@ -132,9 +140,10 @@ async function startRecording() {
       }
     };
 
-    ws.onerror = () => { setStatus('WebSocket error', 'error'); cleanup(); };
-    ws.onclose = (e) => {
-      if (document.getElementById('startBtn').disabled) {
+    currentWs.onerror = () => { if (ws !== currentWs) return; setStatus('WebSocket error', 'error'); cleanup(); };
+    currentWs.onclose = (e) => {
+      if (ws !== currentWs) return;
+      if (!stopping && document.getElementById('startBtn').disabled) {
         setStatus('Connection closed unexpectedly - check model/server logs', 'error');
         cleanup();
       }
@@ -159,23 +168,29 @@ async function startRecording() {
 }
 
 function stopRecording() {
+  stopping = true;
   // Stop sending audio immediately
   if (processor) { try { processor.disconnect(); } catch(e) {} processor = null; }
   if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
-  if (audioContext) { audioContext.close(); audioContext = null; }
+  if (audioContext) { try { audioContext.close(); } catch(e) {} audioContext = null; }
 
-  if (ws && ws.readyState === WebSocket.OPEN) {
+  const oldWs = ws;
+  ws = null;  // Detach so old handlers won't affect anything
+
+  if (oldWs && oldWs.readyState === WebSocket.OPEN) {
     setStatus('Finalizing...', 'connected');
-    try { ws.send('END'); } catch(e) {}
-    // Force close after 3s if server doesn't respond
+    try { oldWs.send('END'); } catch(e) {}
     setTimeout(() => {
-      if (ws) { try { ws.close(); } catch(e) {} ws = null; }
+      try { oldWs.close(); } catch(e) {}
       document.getElementById('startBtn').disabled = false;
       document.getElementById('stopBtn').disabled = true;
-      setStatus('Done (timeout)', '');
+      setStatus('Done', '');
     }, 3000);
   } else {
-    cleanup();
+    if (oldWs) { try { oldWs.close(); } catch(e) {} }
+    document.getElementById('startBtn').disabled = false;
+    document.getElementById('stopBtn').disabled = true;
+    setStatus('Stopped', '');
   }
 }
 

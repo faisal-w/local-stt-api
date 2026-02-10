@@ -60,22 +60,20 @@ class AudioStreamProcessor:
         self.buffer.append(audio_float)
         self.buffer_duration += len(audio_float) / self.sample_rate
         
-        # Process when we have enough audio (1 second minimum)
-        if self.buffer_duration >= 1.0:
+        # Process when we have enough audio (5 seconds for full sentences)
+        if self.buffer_duration >= 5.0:
             combined = np.concatenate(self.buffer)
-            
+
             result = self.model.transcribe(
                 combined,
                 self.sample_rate,
                 self.language,
             )
-            
-            # Keep last second for context overlap
-            if self.buffer_duration >= 5.0:
-                # Keep last chunk for overlap
-                self.buffer = [self.buffer[-1]] if self.buffer else []
-                self.buffer_duration = len(self.buffer[0]) / self.sample_rate if self.buffer else 0.0
-            
+
+            # Clear buffer after transcription to avoid duplicates
+            self.buffer = []
+            self.buffer_duration = 0.0
+
             if result.text:
                 return {
                     "type": "transcription",

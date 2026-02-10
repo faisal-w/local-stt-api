@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 class FasterWhisperModel(STTModelBase):
     """Faster-Whisper implementation using CTranslate2 backend."""
     
-    SIZES = ["tiny", "tiny.en", "base", "base.en", "small", "small.en", 
-             "medium", "medium.en", "large-v2", "large-v3"]
+    SIZES = ["tiny", "tiny.en", "base", "base.en", "small", "small.en",
+             "medium", "medium.en", "large-v2", "large-v3", "large-v3-turbo"]
     
     def __init__(
         self,
@@ -117,7 +117,7 @@ class FasterWhisperModel(STTModelBase):
         segments, info = self.model.transcribe(
             audio,
             language=language,
-            beam_size=5,
+            beam_size=10,
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500),
         )
@@ -180,7 +180,7 @@ class FasterWhisperModel(STTModelBase):
                 segments, info = self.model.transcribe(
                     combined,
                     language=language,
-                    beam_size=5,
+                    beam_size=10,
                     vad_filter=True,
                 )
                 
@@ -209,7 +209,7 @@ class FasterWhisperModel(STTModelBase):
             segments, info = self.model.transcribe(
                 combined,
                 language=language,
-                beam_size=5,
+                beam_size=10,
             )
             
             text_parts = [seg.text.strip() for seg in segments]
